@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Inbox</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a0a;
+    --surface: #111;
+    --red: #ff2d2d;
+    --red-dim: #8b0000;
+    --green: #00ff88;
+    --green-dim: #005533;
+    --text: #f0f0f0;
+    --muted: #555;
+    --font: 'Space Mono', monospace;
+  }
+
+  html, body {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    touch-action: manipulation;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    position: relative;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  .status-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 14px 20px;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    color: var(--muted);
+    text-transform: uppercase;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #1a1a1a;
+    z-index: 5;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    display: inline-block;
+    margin-right: 8px;
+    transition: background 0.3s;
+  }
+
+  .status-dot.active { background: var(--red); box-shadow: 0 0 8px var(--red); }
+  .status-dot.sent { background: var(--green); box-shadow: 0 0 8px var(--green); }
+
+  /* Main button area */
+  .btn-wrap {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 30px 120px;
+  }
+
+  #mainBtn {
+    width: 100%;
+    height: 100%;
+    border: 2px solid #222;
+    border-radius: 24px;
+    background: var(--surface);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: clamp(18px, 5vw, 28px);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    transition: all 0.15s ease;
+    position: relative;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+
+  #mainBtn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 22px;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  /* IDLE state */
+  #mainBtn.idle {
+    border-color: #2a2a2a;
+  }
+  #mainBtn.idle:active {
+    transform: scale(0.98);
+    border-color: var(--red);
+  }
+
+  /* RECORDING state */
+  #mainBtn.recording {
+    border-color: var(--red);
+    box-shadow: 0 0 0 1px var(--red-dim), inset 0 0 80px rgba(255,45,45,0.06);
+    animation: pulse-red 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse-red {
+    0%, 100% { box-shadow: 0 0 0 1px var(--red-dim), inset 0 0 80px rgba(255,45,45,0.06); }
+    50% { box-shadow: 0 0 0 4px var(--red-dim), inset 0 0 80px rgba(255,45,45,0.1); }
+  }
+
+  /* SENDING state */
+  #mainBtn.sending {
+    border-color: #333;
+    opacity: 0.6;
+    pointer-events: none;
+  }
+
+  /* SENT state */
+  #mainBtn.sent {
+    border-color: var(--green);
+    box-shadow: 0 0 0 1px var(--green-dim), inset 0 0 80px rgba(0,255,136,0.05);
+  }
+
+  /* ERROR state */
+  #mainBtn.error {
+    border-color: var(--red);
+    animation: shake 0.4s ease;
+  }
+
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-8px); }
+    75% { transform: translateX(8px); }
+  }
+
+  .btn-icon {
+    font-size: clamp(52px, 15vw, 88px);
+    line-height: 1;
+    transition: all 0.2s;
+  }
+
+  .btn-label {
+    font-size: clamp(13px, 3.5vw, 20px);
+    letter-spacing: 0.2em;
+    opacity: 0.7;
+  }
+
+  .btn-sublabel {
+    font-size: clamp(10px, 2.5vw, 13px);
+    letter-spacing: 0.1em;
+    opacity: 0.3;
+    margin-top: -12px;
+  }
+
+  /* Timer */
+  .timer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    letter-spacing: 0.2em;
+    color: var(--red);
+    opacity: 0;
+    transition: opacity 0.3s;
+    border-top: 1px solid #1a1a1a;
+  }
+
+  .timer.visible { opacity: 1; }
+
+  /* Waveform bars */
+  .waveform {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    height: 40px;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .waveform.visible { opacity: 1; }
+  .waveform span {
+    width: 4px;
+    background: var(--red);
+    border-radius: 2px;
+    animation: wave 0.8s ease-in-out infinite;
+    min-height: 4px;
+  }
+  .waveform span:nth-child(1) { animation-delay: 0s; height: 16px; }
+  .waveform span:nth-child(2) { animation-delay: 0.1s; height: 28px; }
+  .waveform span:nth-child(3) { animation-delay: 0.2s; height: 40px; }
+  .waveform span:nth-child(4) { animation-delay: 0.3s; height: 24px; }
+  .waveform span:nth-child(5) { animation-delay: 0.4s; height: 36px; }
+  .waveform span:nth-child(6) { animation-delay: 0.5s; height: 20px; }
+  .waveform span:nth-child(7) { animation-delay: 0.6s; height: 32px; }
+
+  @keyframes wave {
+    0%, 100% { transform: scaleY(0.4); opacity: 0.5; }
+    50% { transform: scaleY(1); opacity: 1; }
+  }
+
+  .toast {
+    position: fixed;
+    top: 60px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-20px);
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    color: var(--text);
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    opacity: 0;
+    transition: all 0.3s;
+    white-space: nowrap;
+    z-index: 20;
+  }
+  .toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+</style>
+</head>
+<body>
+
+<div class="status-bar">
+  <span><span class="status-dot" id="statusDot"></span><span id="statusText">READY</span></span>
+  <span id="statusRight">INBOX</span>
+</div>
+
+<div class="btn-wrap">
+  <button id="mainBtn" class="idle" onclick="handleTap()">
+    <div class="waveform" id="waveform">
+      <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+    </div>
+    <div class="btn-icon" id="btnIcon">🎙️</div>
+    <div class="btn-label" id="btnLabel">TAP TO RECORD</div>
+    <div class="btn-sublabel" id="btnSublabel">voice note → notion</div>
+  </button>
+</div>
+
+<div class="timer" id="timer">0:00</div>
+<div class="toast" id="toast"></div>
+
+<script>
+  // ── CONFIG ──────────────────────────────────────────────────────────────────
+  const BOT_TOKEN   = '8607186911:AAFopFie3CdAw6sUiMtKURwZqo7ABAROngQ';
+  const CHAT_ID     = '8494202856';
+  // ────────────────────────────────────────────────────────────────────────────
+
+  let mediaRecorder = null;
+  let audioChunks   = [];
+  let timerInterval = null;
+  let seconds       = 0;
+  let state         = 'idle'; // idle | recording | sending | sent | error
+
+  const btn        = document.getElementById('mainBtn');
+  const btnIcon    = document.getElementById('btnIcon');
+  const btnLabel   = document.getElementById('btnLabel');
+  const btnSublabel= document.getElementById('btnSublabel');
+  const timerEl    = document.getElementById('timer');
+  const waveform   = document.getElementById('waveform');
+  const statusDot  = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+  const toastEl    = document.getElementById('toast');
+
+  function showToast(msg, duration = 3000) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    setTimeout(() => toastEl.classList.remove('show'), duration);
+  }
+
+  function setTimerDisplay(s) {
+    const m = Math.floor(s / 60);
+    const ss = String(s % 60).padStart(2, '0');
+    timerEl.textContent = `${m}:${ss}`;
+  }
+
+  function setState(newState, sublabel = '') {
+    state = newState;
+    btn.className = newState;
+
+    statusDot.className = 'status-dot';
+
+    if (newState === 'idle') {
+      btnIcon.textContent    = '🎙️';
+      btnLabel.textContent   = 'TAP TO RECORD';
+      btnSublabel.textContent = sublabel || 'voice note → notion';
+      timerEl.classList.remove('visible');
+      waveform.classList.remove('visible');
+      statusText.textContent = 'READY';
+      clearInterval(timerInterval);
+      seconds = 0;
+    }
+    else if (newState === 'recording') {
+      btnIcon.textContent    = '⏹';
+      btnLabel.textContent   = 'TAP TO STOP';
+      btnSublabel.textContent = 'recording...';
+      timerEl.classList.add('visible');
+      waveform.classList.add('visible');
+      statusDot.classList.add('active');
+      statusText.textContent = 'RECORDING';
+      seconds = 0;
+      setTimerDisplay(0);
+      timerInterval = setInterval(() => {
+        seconds++;
+        setTimerDisplay(seconds);
+      }, 1000);
+    }
+    else if (newState === 'sending') {
+      btnIcon.textContent    = '📡';
+      btnLabel.textContent   = 'SENDING...';
+      btnSublabel.textContent = 'routing to notion';
+      timerEl.classList.remove('visible');
+      waveform.classList.remove('visible');
+      statusText.textContent = 'SENDING';
+      clearInterval(timerInterval);
+    }
+    else if (newState === 'sent') {
+      btnIcon.textContent    = '✓';
+      btnLabel.textContent   = 'SENT';
+      btnSublabel.textContent = 'tap to record again';
+      statusDot.classList.add('sent');
+      statusText.textContent = 'DELIVERED';
+      setTimeout(() => setState('idle'), 2500);
+    }
+    else if (newState === 'error') {
+      btnIcon.textContent    = '✕';
+      btnLabel.textContent   = 'FAILED';
+      btnSublabel.textContent = sublabel || 'tap to try again';
+      statusText.textContent = 'ERROR';
+      setTimeout(() => setState('idle'), 3000);
+    }
+  }
+
+  async function handleTap() {
+    if (state === 'idle')      return startRecording();
+    if (state === 'recording') return stopRecording();
+  }
+
+  async function startRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunks = [];
+
+      const options = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? { mimeType: 'audio/webm;codecs=opus' }
+        : MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')
+          ? { mimeType: 'audio/ogg;codecs=opus' }
+          : {};
+
+      mediaRecorder = new MediaRecorder(stream, options);
+
+      mediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) audioChunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        await sendAudio();
+      };
+
+      mediaRecorder.start(100);
+      setState('recording');
+
+    } catch (err) {
+      console.error(err);
+      showToast('Microphone permission denied');
+      setState('error', 'allow mic in browser settings');
+    }
+  }
+
+  function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      setState('sending');
+      mediaRecorder.stop();
+    }
+  }
+
+  async function sendAudio() {
+    try {
+      const mimeType = audioChunks[0]?.type || 'audio/webm';
+      const ext      = mimeType.includes('ogg') ? 'ogg' : 'webm';
+      const blob     = new Blob(audioChunks, { type: mimeType });
+
+      const form = new FormData();
+      form.append('chat_id', CHAT_ID);
+      form.append('voice', blob, `voice.${ext}`);
+
+      const resp = await fetch(
+        `https://api.telegram.org/bot${BOT_TOKEN}/sendVoice`,
+        { method: 'POST', body: form }
+      );
+
+      const data = await resp.json();
+
+      if (data.ok) {
+        setState('sent');
+        showToast('✓ Saved to Inbox');
+      } else {
+        console.error(data);
+        setState('error', data.description || 'send failed');
+        showToast('Send failed: ' + (data.description || 'unknown error'));
+      }
+
+    } catch (err) {
+      console.error(err);
+      setState('error', 'network error');
+      showToast('Network error — check connection');
+    }
+  }
+</script>
+</body>
+</html>
